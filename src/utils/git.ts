@@ -3,6 +3,14 @@ import FS from '@isomorphic-git/lightning-fs'
 
 // Buffer polyfill for browser
 import { Buffer } from 'buffer'
+
+// Extend Window interface for TypeScript
+declare global {
+  interface Window {
+    Buffer?: typeof Buffer
+  }
+}
+
 if (typeof window !== 'undefined' && !window.Buffer) {
   window.Buffer = Buffer
 }
@@ -21,7 +29,7 @@ export async function initRepo(): Promise<void> {
   try {
     // Ensure directory exists
     try {
-      await pfs.mkdir(REPO_DIR, { recursive: true })
+      await pfs.mkdir(REPO_DIR)
     } catch (error: any) {
       if (error.code !== 'EEXIST') {
         throw error
@@ -58,7 +66,7 @@ export async function fileExists(filepath: string): Promise<boolean> {
 
 export async function readFile(filepath: string): Promise<string> {
   try {
-    const content = await pfs.readFile(`${REPO_DIR}/${filepath}`, { encoding: 'utf8' })
+    const content = await pfs.readFile(`${REPO_DIR}/${filepath}`, 'utf8')
     return content as string
   } catch (error) {
     console.error('Error reading file:', error)
@@ -68,7 +76,7 @@ export async function readFile(filepath: string): Promise<string> {
 
 export async function writeFile(filepath: string, content: string): Promise<void> {
   try {
-    await pfs.writeFile(`${REPO_DIR}/${filepath}`, content, { encoding: 'utf8' })
+    await pfs.writeFile(`${REPO_DIR}/${filepath}`, content, 'utf8')
   } catch (error) {
     console.error('Error writing file:', error)
   }
