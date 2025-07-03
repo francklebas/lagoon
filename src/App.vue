@@ -1,18 +1,49 @@
 <template>
   <div class="app" :class="{ dark: isDark }">
     <header class="header">
-      <h1>Markdown Editor</h1>
+      <h1>Lagoon</h1>
       <div class="actions">
-        <button @click="toggleTheme" class="btn">
+        <button @click="toggleTheme" class="btn" title="Changer le thème">
           {{ isDark ? '☀️' : '🌙' }}
         </button>
-        <button @click="exportHTML" class="btn">
-          Export HTML
+        <button @click="showHistory = !showHistory" class="btn" title="Historique">
+          📜
         </button>
+        <button @click="exportMarkdown" class="btn" title="Télécharger notes.md">
+          📄 MD
+        </button>
+        <button @click="exportHTML" class="btn" title="Export HTML">
+          📄 HTML
+        </button>
+        <button @click="exportZip" class="btn" title="Télécharger repo complet">
+          📦 ZIP
+        </button>
+        <span v-if="isSaving" class="saving-indicator">💾 Sauvegarde...</span>
       </div>
     </header>
     
     <main class="main">
+      <div v-if="showHistory" class="history-panel">
+        <div class="history-header">
+          <h2>Historique des modifications</h2>
+          <button @click="showHistory = false" class="close-btn">✕</button>
+        </div>
+        <div class="commits-list">
+          <div 
+            v-for="commit in commits" 
+            :key="commit.oid"
+            class="commit-item"
+            @click="restoreCommit(commit.oid)"
+          >
+            <div class="commit-message">{{ commit.commit.message }}</div>
+            <div class="commit-meta">
+              <span>{{ commit.commit.author.name }}</span>
+              <span>{{ formatDate(commit.commit.author.timestamp) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <div class="pane">
         <Editor 
           v-model="markdown" 
@@ -33,47 +64,78 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Editor from './components/Editor.vue'
 import Preview from './components/Preview.vue'
+import {
+  initRepo,
+  fileExists,
+  readFile,
+  writeFile,
+  commitFile,
+  getCommitHistory,
+  checkoutCommit,
+  exportRepo,
+  FILE_PATH
+} from './utils/git'
 
-const markdown = ref(`# Bienvenue dans l'éditeur Markdown
-
-Ceci est un **éditeur Markdown** simple et efficace.
-
-## Fonctionnalités
-
-- 🎨 Thème clair/sombre
-- 📝 Aperçu en temps réel
-- 📄 Export HTML
-- 🔄 Scroll synchronisé
-
-### Syntaxe Markdown supportée
-
-Vous pouvez utiliser :
-
-1. **Texte en gras**
-2. *Texte en italique*
-3. \`Code inline\`
-4. [Liens](https://example.com)
-
-\`\`\`javascript
-// Blocs de code
-function hello() {
-  console.log('Hello, world!')
-}
-\`\`\`
-
-> Les citations sont également supportées
-
----
-
-Profitez de l'éditeur !`)
+const markdown = ref('')
+const isGitReady = ref(false)
+const commits = ref<Array<any>>([])
+const showHistory = ref(false)
+const isSaving = ref(false)
 
 const isDark = ref(false)
 const previewRef = ref<InstanceType<typeof Preview>>()
+
+// Autosave timer
+let saveTimeout: number | undefined
+
+// Initialize Git repo and load content
+onMounted(async () => {
+  await initRepo()
+  
+  // Load from Git or localStorage
+  if (await fileExists(FILE_PATH)) {
+    markdown.value = await readFile(FILE_PATH)
+  } else {
+    // Check localStorage fallback
+    const saved = localStorage.getItem('markdown-editor-content')
+    if (saved) {
+      markdown.value = saved
+    } else {
+      // Default content for new users
+      markdown.value = `# Mes Notes\n\nBienvenue dans votre éditeur Markdown personnel !\n\n## Fonctionnalités\n\n- 📝 Sauvegarde automatique avec historique Git\n- 🎨 Thème clair/sombre\n- 📄 Export de vos notes\n- 🔄 Historique des modifications\n\nCommencez à écrire...`
+    }
+    // Create initial file
+    await writeFile(FILE_PATH, markdown.value)
+    await commitFile(FILE_PATH, 'Initial commit')
+  }
+  
+  isGitReady.value = true
+  await loadCommitHistory()
+})
+
+// Watch for changes and autosave
+watch(markdown, (newValue) => {
+  if (!isGitReady.value) return
+  
+  // Save to localStorage immediately
+  localStorage.setItem('markdown-editor-content', newValue)
+  
+  // Debounce Git save
+  clearTimeout(saveTimeout)
+  isSaving.value = true
+  
+  saveTimeout = setTimeout(async () => {
+    await writeFile(FILE_PATH, newValue)
+    await commitFile(FILE_PATH, `Autosave @${new Date().toLocaleString()}`)
+    await loadCommitHistory()
+    isSaving.value = false
+  }, 2000) // 2 second debounce
+})
 
 const renderedHTML = computed(() => {
   const html = marked(markdown.value) as string
@@ -86,6 +148,42 @@ const toggleTheme = () => {
 
 const handleEditorScroll = (ratio: number) => {
   previewRef.value?.scrollToRatio(ratio)
+}
+
+const loadCommitHistory = async () => {
+  commits.value = await getCommitHistory()
+}
+
+const restoreCommit = async (oid: string) => {
+  const content = await checkoutCommit(oid)
+  if (content) {
+    markdown.value = content
+    showHistory.value = false
+  }
+}
+
+const exportMarkdown = () => {
+  const blob = new Blob([markdown.value], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'notes.md'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const exportZip = async () => {
+  const blob = await exportRepo()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'markdown-editor-repo.zip'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const formatDate = (timestamp: number) => {
+  return new Date(timestamp * 1000).toLocaleString()
 }
 
 const exportHTML = () => {
@@ -252,5 +350,80 @@ body {
 .divider {
   width: 1px;
   background-color: var(--divider-color);
+}
+
+.saving-indicator {
+  font-size: 12px;
+  color: var(--link-color);
+  margin-left: 1rem;
+}
+
+.history-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--editor-bg);
+  z-index: 10;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.history-header h2 {
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--editor-text);
+  padding: 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.close-btn:hover {
+  background-color: var(--divider-color);
+}
+
+.commits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.commit-item {
+  padding: 1rem;
+  background-color: var(--header-bg);
+  border: 1px solid var(--divider-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.commit-item:hover {
+  background-color: var(--preview-bg);
+}
+
+.commit-message {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.commit-meta {
+  font-size: 12px;
+  color: var(--blockquote-text);
+  display: flex;
+  gap: 1rem;
 }
 </style>
