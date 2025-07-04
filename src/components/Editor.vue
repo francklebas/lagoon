@@ -4,7 +4,7 @@
     @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
     @scroll="handleScroll"
     class="editor"
-    placeholder="Écrivez votre Markdown ici..."
+    placeholder="Write your Markdown here..."
   />
 </template>
 

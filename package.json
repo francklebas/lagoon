@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
+    "deploy": "npm run build && npx surge dist/ lagoon-app.surge.sh",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -18,7 +19,8 @@
     "isomorphic-git": "^1.32.1",
     "jszip": "^3.10.1",
     "marked": "^16.0.0",
-    "vue": "^3.5.17"
+    "vue": "^3.5.17",
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",
