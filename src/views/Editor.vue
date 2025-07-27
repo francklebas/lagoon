@@ -18,6 +18,9 @@
         <button @click="exportZip" class="btn" title="Download full repository">
           📦 ZIP
         </button>
+        <button @click="swichtIsEditing" class="btn" title="Download full repository">
+          📦 SWITCH EDIT ONLY MODE
+        </button>
         <span v-if="isSaving" class="saving-indicator">💾 Saving...</span>
       </div>
     </header>
@@ -53,7 +56,7 @@
       
       <div class="divider" />
       
-      <div class="pane">
+      <div class="pane" v-if="!isEditing">
         <Preview 
           :html="renderedHTML"
           ref="previewRef"
@@ -81,6 +84,7 @@ import {
   FILE_PATH
 } from '../utils/git'
 
+const isEditing = ref(false)
 const markdown = ref('')
 const isGitReady = ref(false)
 const commits = ref<Array<any>>([])
@@ -136,6 +140,8 @@ watch(markdown, (newValue) => {
     isSaving.value = false
   }, 2000) // 2 second debounce
 })
+
+const swichtIsEditing = () => isEditing.value = !isEditing.value
 
 const renderedHTML = computed(() => {
   const html = marked(markdown.value) as string
