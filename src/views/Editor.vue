@@ -4,10 +4,7 @@
       <h1>Lagoon</h1>
       <div class="actions">
         <button @click="toggleTheme" class="btn" title="Toggle theme">
-          {{ isDark ? '☀️' : '🌙' }}
-        </button>
-        <button @click="showHistory = !showHistory" class="btn" title="History">
-          📜
+          {{ isDark ? "☀️" : "🌙" }}
         </button>
         <button @click="exportMarkdown" class="btn" title="Download notes.md">
           📄 MD
@@ -24,7 +21,7 @@
         <span v-if="isSaving" class="saving-indicator">💾 Saving...</span>
       </div>
     </header>
-    
+
     <main class="main">
       <div v-if="showHistory" class="history-panel">
         <div class="history-header">
@@ -32,8 +29,8 @@
           <button @click="showHistory = false" class="close-btn">✕</button>
         </div>
         <div class="commits-list">
-          <div 
-            v-for="commit in commits" 
+          <div
+            v-for="commit in commits"
             :key="commit.oid"
             class="commit-item"
             @click="restoreCommit(commit.oid)"
@@ -46,14 +43,11 @@
           </div>
         </div>
       </div>
-      
+
       <div class="pane">
-        <Editor 
-          v-model="markdown" 
-          @scroll="handleEditorScroll"
-        />
+        <Editor v-model="markdown" @scroll="handleEditorScroll" />
       </div>
-      
+
       <div class="divider" />
       
       <div class="pane" v-if="!isEditing">
@@ -67,11 +61,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
-import Editor from '../components/Editor.vue'
-import Preview from '../components/Preview.vue'
+import { ref, computed, onMounted, watch } from "vue";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+import Editor from "../components/Editor.vue";
+import Preview from "../components/Preview.vue";
 import {
   initRepo,
   fileExists,
@@ -81,8 +75,8 @@ import {
   getCommitHistory,
   checkoutCommit,
   exportRepo,
-  FILE_PATH
-} from '../utils/git'
+  FILE_PATH,
+} from "../utils/git";
 
 const isEditing = ref(false)
 const markdown = ref('')
@@ -91,106 +85,110 @@ const commits = ref<Array<any>>([])
 const showHistory = ref(false)
 const isSaving = ref(false)
 
-const isDark = ref(false)
-const previewRef = ref<InstanceType<typeof Preview>>()
+const isDark = ref(false);
+const previewRef = ref<InstanceType<typeof Preview>>();
 
 // Autosave timer
-let saveTimeout: number | undefined
+let saveTimeout: number | undefined;
 
 // Initialize Git repo and load content
 onMounted(async () => {
-  await initRepo()
-  
+  await initRepo();
+
   // Load from Git or localStorage
   if (await fileExists(FILE_PATH)) {
-    markdown.value = await readFile(FILE_PATH)
+    markdown.value = await readFile(FILE_PATH);
   } else {
     // Check localStorage fallback
-    const saved = localStorage.getItem('markdown-editor-content')
+    const saved = localStorage.getItem("markdown-editor-content");
     if (saved) {
-      markdown.value = saved
+      markdown.value = saved;
     } else {
       // Default content for new users
-      markdown.value = `# My Notes\n\nWelcome to your personal Markdown editor!\n\n## Features\n\n- 📝 Automatic save with Git history\n- 🎨 Light/dark theme\n- 📄 Export your notes\n- 🔄 Change history\n\nStart writing...`
+      markdown.value = `# My Notes\n\nWelcome to your personal Markdown editor!\n\n## Features\n\n- 📝 Automatic save with Git history\n- 🎨 Light/dark theme\n- 📄 Export your notes\n- 🔄 Change history\n\nStart writing...`;
     }
     // Create initial file
-    await writeFile(FILE_PATH, markdown.value)
-    await commitFile(FILE_PATH, 'Initial commit')
+    await writeFile(FILE_PATH, markdown.value);
+    await commitFile(FILE_PATH, "Initial commit");
   }
-  
-  isGitReady.value = true
-  await loadCommitHistory()
-})
+
+  isGitReady.value = true;
+  await loadCommitHistory();
+});
 
 // Watch for changes and autosave
 watch(markdown, (newValue) => {
-  if (!isGitReady.value) return
-  
+  if (!isGitReady.value) return;
+
   // Save to localStorage immediately
-  localStorage.setItem('markdown-editor-content', newValue)
-  
+  localStorage.setItem("markdown-editor-content", newValue);
+
   // Debounce Git save
-  clearTimeout(saveTimeout)
-  isSaving.value = true
-  
+  clearTimeout(saveTimeout);
+  isSaving.value = true;
+
   saveTimeout = setTimeout(async () => {
-    await writeFile(FILE_PATH, newValue)
-    await commitFile(FILE_PATH, `Autosave @${new Date().toLocaleString()}`)
-    await loadCommitHistory()
-    isSaving.value = false
-  }, 2000) // 2 second debounce
-})
+    await writeFile(FILE_PATH, newValue);
+    await commitFile(FILE_PATH, `Autosave @${new Date().toLocaleString()}`);
+    await loadCommitHistory();
+    isSaving.value = false;
+  }, 2000); // 2 second debounce
+});
 
 const swichtIsEditing = () => isEditing.value = !isEditing.value
 
 const renderedHTML = computed(() => {
-  const html = marked(markdown.value) as string
-  return DOMPurify.sanitize(html)
-})
+  const html = marked(markdown.value) as string;
+  return DOMPurify.sanitize(html);
+});
+
+const switchView = () => {
+  view.value = !view.value;
+};
 
 const toggleTheme = () => {
-  isDark.value = !isDark.value
-}
+  isDark.value = !isDark.value;
+};
 
 const handleEditorScroll = (ratio: number) => {
-  previewRef.value?.scrollToRatio(ratio)
-}
+  previewRef.value?.scrollToRatio(ratio);
+};
 
 const loadCommitHistory = async () => {
-  commits.value = await getCommitHistory()
-}
+  commits.value = await getCommitHistory();
+};
 
 const restoreCommit = async (oid: string) => {
-  const content = await checkoutCommit(oid)
+  const content = await checkoutCommit(oid);
   if (content) {
-    markdown.value = content
-    showHistory.value = false
+    markdown.value = content;
+    showHistory.value = false;
   }
-}
+};
 
 const exportMarkdown = () => {
-  const blob = new Blob([markdown.value], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'notes.md'
-  a.click()
-  URL.revokeObjectURL(url)
-}
+  const blob = new Blob([markdown.value], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "notes.md";
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 const exportZip = async () => {
-  const blob = await exportRepo()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'markdown-editor-repo.zip'
-  a.click()
-  URL.revokeObjectURL(url)
-}
+  const blob = await exportRepo();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "markdown-editor-repo.zip";
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 const formatDate = (timestamp: number) => {
-  return new Date(timestamp * 1000).toLocaleString()
-}
+  return new Date(timestamp * 1000).toLocaleString();
+};
 
 const exportHTML = () => {
   const fullHTML = `<!DOCTYPE html>
@@ -246,16 +244,16 @@ const exportHTML = () => {
 <body>
   ${renderedHTML.value}
 </body>
-</html>`
+</html>`;
 
-  const blob = new Blob([fullHTML], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'export.html'
-  a.click()
-  URL.revokeObjectURL(url)
-}
+  const blob = new Blob([fullHTML], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "export.html";
+  a.click();
+  URL.revokeObjectURL(url);
+};
 </script>
 
 <style>
@@ -296,7 +294,8 @@ const exportHTML = () => {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .app {
@@ -305,7 +304,9 @@ body {
   height: 100vh;
   background-color: var(--editor-bg);
   color: var(--editor-text);
-  transition: background-color 0.3s, color 0.3s;
+  transition:
+    background-color 0.3s,
+    color 0.3s;
 }
 
 .header {
