@@ -1,4 +1,4 @@
-<template>
+<template
   <div class="app" :class="{ dark: isDark }">
     <header class="header">
       <h1>Lagoon</h1>
@@ -15,7 +15,7 @@
         <button @click="exportZip" class="btn" title="Download full repository">
           📦 ZIP
         </button>
-        <button @click="swichtIsEditing" class="btn" title="Download full repository">
+        <button @click="toggleEditing" class="btn" title="Toggle edit‑only mode">
           📦 SWITCH EDIT ONLY MODE
         </button>
         <span v-if="isSaving" class="saving-indicator">💾 Saving...</span>
@@ -78,10 +78,21 @@ import {
   FILE_PATH,
 } from "../utils/git";
 
+interface GitCommit {
+  oid: string;
+  commit: {
+    message: string;
+    author: {
+      name: string;
+      timestamp: number; // timestamp Unix en secondes
+    };
+  };
+}
+
 const isEditing = ref(false)
 const markdown = ref('')
 const isGitReady = ref(false)
-const commits = ref<Array<any>>([])
+const commits = ref<GitCommit[]>([])
 const showHistory = ref(false)
 const isSaving = ref(false)
 
@@ -89,7 +100,7 @@ const isDark = ref(false);
 const previewRef = ref<InstanceType<typeof Preview>>();
 
 // Autosave timer
-let saveTimeout: number | undefined;
+let saveTimeout: ReturnType<typeof setTimeout> | undefined;
 
 // Initialize Git repo and load content
 onMounted(async () => {
@@ -135,16 +146,12 @@ watch(markdown, (newValue) => {
   }, 2000); // 2 second debounce
 });
 
-const swichtIsEditing = () => isEditing.value = !isEditing.value
+const toggleEditing = () => isEditing.value = !isEditing.value
 
 const renderedHTML = computed(() => {
   const html = marked(markdown.value) as string;
   return DOMPurify.sanitize(html);
 });
-
-const switchView = () => {
-  view.value = !view.value;
-};
 
 const toggleTheme = () => {
   isDark.value = !isDark.value;
