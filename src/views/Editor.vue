@@ -18,49 +18,61 @@
         <button @click="exportZip" class="btn" title="Download full repository">
           📦 ZIP
         </button>
-        <button @click="swichtIsEditing" class="btn" title="Download full repository">
-          📦 SWITCH EDIT ONLY MODE
+        <button @click="swichtIsEditing" class="btn" title="Toggle edit only mode">
+          {{ isEditing ? '👁️' : '✏️' }} {{ isEditing ? 'Preview' : 'Edit Only' }}
         </button>
         <span v-if="isSaving" class="saving-indicator">💾 Saving...</span>
       </div>
     </header>
     
     <main class="main">
-      <div v-if="showHistory" class="history-panel">
-        <div class="history-header">
-          <h2>Change History</h2>
-          <button @click="showHistory = false" class="close-btn">✕</button>
-        </div>
-        <div class="commits-list">
-          <div 
-            v-for="commit in commits" 
-            :key="commit.oid"
-            class="commit-item"
-            @click="restoreCommit(commit.oid)"
-          >
-            <div class="commit-message">{{ commit.commit.message }}</div>
-            <div class="commit-meta">
-              <span>{{ commit.commit.author.name }}</span>
-              <span>{{ formatDate(commit.commit.author.timestamp) }}</span>
+      <NotesSidebar
+        :active-note-id="currentNoteId"
+        @select-note="selectNote"
+        @create-note="handleCreateNote"
+        @delete-note="handleDeleteNote"
+        ref="sidebarRef"
+      />
+      
+      <div class="content-area">
+        <div v-if="showHistory" class="history-panel">
+          <div class="history-header">
+            <h2>Change History</h2>
+            <button @click="showHistory = false" class="close-btn">✕</button>
+          </div>
+          <div class="commits-list">
+            <div 
+              v-for="commit in commits" 
+              :key="commit.oid"
+              class="commit-item"
+              @click="restoreCommit(commit.oid)"
+            >
+              <div class="commit-message">{{ commit.commit.message }}</div>
+              <div class="commit-meta">
+                <span>{{ commit.commit.author.name }}</span>
+                <span>{{ formatDate(commit.commit.author.timestamp) }}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      
-      <div class="pane">
-        <Editor 
-          v-model="markdown" 
-          @scroll="handleEditorScroll"
-        />
-      </div>
-      
-      <div class="divider" />
-      
-      <div class="pane" v-if="!isEditing">
-        <Preview 
-          :html="renderedHTML"
-          ref="previewRef"
-        />
+        
+        <div class="editor-preview-container">
+          <div class="pane">
+            <Editor 
+              v-model="markdown" 
+              @scroll="handleEditorScroll"
+            />
+          </div>
+          
+          <div class="divider" />
+          
+          <div class="pane" v-if="!isEditing">
+            <Preview 
+              :html="renderedHTML"
+              ref="previewRef"
+            />
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -72,17 +84,22 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Editor from '../components/Editor.vue'
 import Preview from '../components/Preview.vue'
+import NotesSidebar from '../components/NotesSidebar.vue'
 import {
   initRepo,
-  fileExists,
-  readFile,
-  writeFile,
-  commitFile,
   getCommitHistory,
   checkoutCommit,
-  exportRepo,
-  FILE_PATH
+  exportRepo
 } from '../utils/git'
+import {
+  initNotesDir,
+  getAllNotes,
+  getNote,
+  saveNote,
+  createNote,
+  migrateExistingNotes,
+  type Note
+} from '../utils/notes'
 
 const isEditing = ref(false)
 const markdown = ref('')
@@ -90,32 +107,70 @@ const isGitReady = ref(false)
 const commits = ref<Array<any>>([])
 const showHistory = ref(false)
 const isSaving = ref(false)
+const currentNoteId = ref<string>('')
+const currentNote = ref<Note | null>(null)
 
 const isDark = ref(false)
 const previewRef = ref<InstanceType<typeof Preview>>()
+const sidebarRef = ref<InstanceType<typeof NotesSidebar>>()
 
 // Autosave timer
 let saveTimeout: number | undefined
 
+// Define selectNote function before onMounted
+const selectNote = async (note: Note) => {
+  currentNote.value = note
+  currentNoteId.value = note.id
+  markdown.value = note.content
+}
+
+const handleCreateNote = async (id: string) => {
+  const note = await getNote(id)
+  if (note) {
+    await selectNote(note)
+  }
+}
+
+const handleDeleteNote = async (id: string) => {
+  // If deleting the current note, select another one
+  if (id === currentNoteId.value) {
+    const notes = await getAllNotes()
+    if (notes.length > 0) {
+      // Select the first available note
+      await selectNote(notes[0])
+    } else {
+      // No notes left, clear the editor
+      currentNoteId.value = ''
+      currentNote.value = null
+      markdown.value = ''
+    }
+  }
+  await loadCommitHistory()
+}
+
 // Initialize Git repo and load content
 onMounted(async () => {
   await initRepo()
+  await initNotesDir()
   
-  // Load from Git or localStorage
-  if (await fileExists(FILE_PATH)) {
-    markdown.value = await readFile(FILE_PATH)
+  // Migrate existing notes if any
+  await migrateExistingNotes()
+  
+  // Load notes
+  const notes = await getAllNotes()
+  
+  if (notes.length > 0) {
+    // Load the first note
+    await selectNote(notes[0])
   } else {
-    // Check localStorage fallback
-    const saved = localStorage.getItem('markdown-editor-content')
-    if (saved) {
-      markdown.value = saved
-    } else {
-      // Default content for new users
-      markdown.value = `# My Notes\n\nWelcome to your personal Markdown editor!\n\n## Features\n\n- 📝 Automatic save with Git history\n- 🎨 Light/dark theme\n- 📄 Export your notes\n- 🔄 Change history\n\nStart writing...`
+    // Create initial note for new users
+    const id = await createNote('My First Note')
+    const note = await getNote(id)
+    if (note) {
+      note.content = `# My First Note\n\nWelcome to Lagoon - your personal Markdown editor!\n\n## Features\n\n- 📝 Multiple notes with automatic save\n- 🎨 Light/dark theme\n- 📄 Export your notes\n- 🔄 Git-based change history\n- 📁 Organized sidebar navigation\n\nStart writing...`
+      await saveNote(id, note.content)
+      await selectNote(note)
     }
-    // Create initial file
-    await writeFile(FILE_PATH, markdown.value)
-    await commitFile(FILE_PATH, 'Initial commit')
   }
   
   isGitReady.value = true
@@ -124,21 +179,24 @@ onMounted(async () => {
 
 // Watch for changes and autosave
 watch(markdown, (newValue) => {
-  if (!isGitReady.value) return
+  if (!isGitReady.value || !currentNoteId.value) return
   
-  // Save to localStorage immediately
-  localStorage.setItem('markdown-editor-content', newValue)
+  // Update current note content
+  if (currentNote.value) {
+    currentNote.value.content = newValue
+  }
   
   // Debounce Git save
   clearTimeout(saveTimeout)
   isSaving.value = true
   
   saveTimeout = setTimeout(async () => {
-    await writeFile(FILE_PATH, newValue)
-    await commitFile(FILE_PATH, `Autosave @${new Date().toLocaleString()}`)
+    await saveNote(currentNoteId.value, newValue)
     await loadCommitHistory()
     isSaving.value = false
-  }, 2000) // 2 second debounce
+    // Reload notes list to update timestamps
+    await sidebarRef.value?.loadNotes()
+  }, 1000) // 2 second debounce
 })
 
 const swichtIsEditing = () => isEditing.value = !isEditing.value
@@ -169,11 +227,12 @@ const restoreCommit = async (oid: string) => {
 }
 
 const exportMarkdown = () => {
+  const filename = currentNote.value ? `${currentNote.value.title}.md` : 'notes.md'
   const blob = new Blob([markdown.value], { type: 'text/markdown' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'notes.md'
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -343,6 +402,19 @@ body {
 }
 
 .main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.editor-preview-container {
   display: flex;
   flex: 1;
   overflow: hidden;
